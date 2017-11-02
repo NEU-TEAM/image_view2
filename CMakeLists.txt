@@ -2,6 +2,22 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(image_view2)
 
+# Check C++11 or C++0x support
+include(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
+CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+if(COMPILER_SUPPORTS_CXX11)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+   add_definitions(-DCOMPILEDWITHC11)
+   message(STATUS "Using flag -std=c++11.")
+elseif(COMPILER_SUPPORTS_CXX0X)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+   add_definitions(-DCOMPILEDWITHC0X)
+   message(STATUS "Using flag -std=c++0x.")
+else()
+   message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
+endif()
+
 # Use ccache if installed to make it fast to generate object files
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
@@ -26,7 +42,7 @@ add_service_files(
 include_directories(include ${catkin_INCLUDE_DIRS})
 
 # Image viewers
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 3 REQUIRED)
 add_executable(image_view2 image_view2.cpp image_view2_node.cpp)
 target_link_libraries(image_view2 ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(image_view2 ${PROJECT_NAME}_gencpp ${PROJECT_NAME}_gencfg)
