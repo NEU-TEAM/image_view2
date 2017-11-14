@@ -102,6 +102,9 @@ ImageView2::ImageView2(ros::NodeHandle& nh)
   local_nh.param("use_window", use_window, true);
   local_nh.param("show_info", show_info_, false);
 
+  local_nh.param("enable_depth_filter", depth_filter_, false);
+  local_nh.param("flip_image", flip_, false);
+
   double xx, yy;
   local_nh.param("resize_scale_x", xx, 1.0);
   local_nh.param("resize_scale_y", yy, 1.0);
@@ -1239,17 +1242,23 @@ void ImageView2::imageCb(const sensor_msgs::ImageConstPtr& msg) {
           cv::Mat(msg->height, msg->width, CV_8UC1,
                   const_cast< uint8_t* >(&msg->data[0]), msg->step);
     } else if (msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1) {
-      // standardize pixel values to 0-255 to visualize depth image
       cv::Mat input_image = cv_bridge::toCvCopy(msg)->image;
-      input_image.convertTo(input_image, CV_32F, 1.0f / 5000.0f);
-      cv::cuda::GpuMat gpuInput_gray(input_image);
-      cv::cuda::GpuMat gpuOpen;
-      cv::cuda::threshold(gpuInput_gray, gpuInput_gray, 10.0, 255.0,
-                          CV_THRESH_TOZERO_INV);
-      mpOpeningFilter->apply(gpuInput_gray, gpuOpen);
-      mpClosingFilter->apply(gpuOpen, gpuOpen);
-      gpuOpen.download(input_image);
-      // threshold(input_image, input_image, 10.0, 0.0, CV_THRESH_TOZERO_INV);
+
+      if (flip_) cv::flip(input_image, input_image, -1);
+
+      if (depth_filter_) {
+        input_image.convertTo(input_image, CV_32F, 1.0f / 5000.0f);
+        cv::cuda::GpuMat gpuInput_gray(input_image);
+        cv::cuda::GpuMat gpuOpen;
+        cv::cuda::threshold(gpuInput_gray, gpuInput_gray, 10.0, 255.0,
+                            CV_THRESH_TOZERO_INV);
+        mpOpeningFilter->apply(gpuInput_gray, gpuOpen);
+        mpClosingFilter->apply(gpuOpen, gpuOpen);
+        gpuOpen.download(input_image);
+        threshold(input_image, input_image, 10.0, 0.0, CV_THRESH_TOZERO_INV);
+      }
+
+      // standardize pixel values to 0-255 to visualize depth image
       double min, max;
       cv::minMaxIdx(input_image, &min, &max);
       cv::convertScaleAbs(input_image, original_image_, 255 / max);
@@ -1257,6 +1266,8 @@ void ImageView2::imageCb(const sensor_msgs::ImageConstPtr& msg) {
       try {
         original_image_ =
             cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8)->image;
+
+        if (flip_) cv::flip(original_image_, original_image_, -1);
       } catch (cv_bridge::Exception& e) {
         ROS_ERROR("Unable to convert %s image to bgr8", msg->encoding.c_str());
         return;

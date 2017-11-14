@@ -240,6 +240,8 @@ class ImageView2 {
   bool draw_grid_;
   bool blurry_mode_;
   bool show_info_;
+  bool depth_filter_;
+  bool flip_;
   double tf_timeout_;
   bool region_continuous_publish_;
   bool continuous_ready_;
