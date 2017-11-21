@@ -65,10 +65,10 @@
 
 #include <image_view2/MouseEvent.h>
 
-#include <opencv2/core/cuda.hpp>
-#include <opencv2/cudafeatures2d.hpp>
-#include <opencv2/cudawarping.hpp>
-#include <opencv2/cudaarithm.hpp>
+//#include <opencv2/core/cuda.hpp>
+//#include <opencv2/cudafeatures2d.hpp>
+//#include <opencv2/cudawarping.hpp>
+//#include <opencv2/cudaarithm.hpp>
 
 #define DEFAULT_COLOR CV_RGB(255, 0, 0)
 #define USER_ROI_COLOR CV_RGB(255, 0, 0)
@@ -310,11 +310,11 @@ class ImageView2 {
   cv::Point ratioPoint(double x, double y);
   KEY_MODE stringToMode(const std::string& str);
 
-  cv::Ptr< cv::cuda::Filter > mpSobelFilterX;
-  cv::Ptr< cv::cuda::Filter > mpSobelFilterY;
-  cv::Ptr< cv::cuda::Filter > mpClosingFilter;
-  cv::Ptr< cv::cuda::Filter > mpOpeningFilter;
-  cv::Ptr< cv::cuda::Filter > mpGaussianFilter;
+//  cv::Ptr< cv::cuda::Filter > mpSobelFilterX;
+//  cv::Ptr< cv::cuda::Filter > mpSobelFilterY;
+//  cv::Ptr< cv::cuda::Filter > mpClosingFilter;
+//  cv::Ptr< cv::cuda::Filter > mpOpeningFilter;
+//  cv::Ptr< cv::cuda::Filter > mpGaussianFilter;
 };
 }
 

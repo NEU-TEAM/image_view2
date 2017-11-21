@@ -37,43 +37,46 @@
 #include <exception>
 namespace image_view2 {
 ImageView2::ImageView2()
-    : marker_topic_("image_marker"),
-      filename_format_(""),
-      count_(0),
-      mode_(MODE_RECTANGLE),
-      times_(100),
-      window_initialized_(false),
-      space_(10) {}
+  : marker_topic_("image_marker"),
+    filename_format_(""),
+    count_(0),
+    mode_(MODE_RECTANGLE),
+    times_(100),
+    window_initialized_(false),
+    space_(10) {}
 
 ImageView2::ImageView2(ros::NodeHandle& nh)
-    : marker_topic_("image_marker"),
-      filename_format_(""),
-      count_(0),
-      mode_(MODE_RECTANGLE),
-      times_(100),
-      selecting_fg_(true),
-      left_button_clicked_(false),
-      continuous_ready_(false),
-      window_initialized_(false),
-      line_select_start_point_(true),
-      line_selected_(false),
-      poly_selecting_done_(true) {
-  std::string camera = nh.resolveName("image");
-  std::string camera_info = nh.resolveName("camera_info");
+  : marker_topic_("image_marker"),
+    filename_format_(""),
+    count_(0),
+    mode_(MODE_RECTANGLE),
+    times_(100),
+    selecting_fg_(true),
+    left_button_clicked_(false),
+    continuous_ready_(false),
+    window_initialized_(false),
+    line_select_start_point_(true),
+    line_selected_(false),
+    poly_selecting_done_(true) {
+  //std::string camera = nh.resolveName("image");
+  std::string camera = "/vision/rgb/image_rect_color";
+  //std::string camera_info = nh.resolveName("camera_info");
+  std::string camera_info = "/vision/rgb/camera_info";
+  
   ros::NodeHandle local_nh("~");
   std::string format_string;
   std::string transport;
   image_transport::ImageTransport it(nh);
   image_transport::ImageTransport local_it(camera);
-
+  
   point_pub_ =
       nh.advertise< geometry_msgs::PointStamped >(camera + "/screenpoint", 100);
   point_array_pub_ = nh.advertise< sensor_msgs::PointCloud2 >(
-      camera + "/screenpoint_array", 100);
+        camera + "/screenpoint_array", 100);
   rectangle_pub_ = nh.advertise< geometry_msgs::PolygonStamped >(
-      camera + "/screenrectangle", 100);
+        camera + "/screenrectangle", 100);
   rectangle_img_pub_ = nh.advertise< sensor_msgs::Image >(
-      camera + "/screenrectangle_image", 100);
+        camera + "/screenrectangle_image", 100);
   move_point_pub_ =
       nh.advertise< geometry_msgs::PointStamped >(camera + "/movepoint", 100);
   foreground_mask_pub_ =
@@ -81,9 +84,9 @@ ImageView2::ImageView2(ros::NodeHandle& nh)
   background_mask_pub_ =
       nh.advertise< sensor_msgs::Image >(camera + "/background", 100);
   foreground_rect_pub_ = nh.advertise< geometry_msgs::PolygonStamped >(
-      camera + "/foreground_rect", 100);
+        camera + "/foreground_rect", 100);
   background_rect_pub_ = nh.advertise< geometry_msgs::PolygonStamped >(
-      camera + "/background_rect", 100);
+        camera + "/background_rect", 100);
   line_pub_ =
       nh.advertise< geometry_msgs::PolygonStamped >(camera + "/line", 100);
   poly_pub_ =
@@ -92,7 +95,7 @@ ImageView2::ImageView2(ros::NodeHandle& nh)
                  std::string("image_view2 [") + camera + std::string("]"));
   local_nh.param("skip_draw_rate", skip_draw_rate_, 0);
   local_nh.param("autosize", autosize_, false);
-  local_nh.param("image_transport", transport, std::string("raw"));
+  local_nh.param("image_transport", transport, std::string("compressed"));
   local_nh.param("draw_grid", draw_grid_, false);
   local_nh.param("blurry", blurry_mode_, false);
   local_nh.param("region_continuous_publish", region_continuous_publish_,
@@ -101,15 +104,15 @@ ImageView2::ImageView2(ros::NodeHandle& nh)
                  std::string("frame%04i.jpg"));
   local_nh.param("use_window", use_window, true);
   local_nh.param("show_info", show_info_, false);
-
+  
   local_nh.param("enable_depth_filter", depth_filter_, false);
   local_nh.param("flip_image", flip_, false);
-
+  
   double xx, yy;
   local_nh.param("resize_scale_x", xx, 1.0);
   local_nh.param("resize_scale_y", yy, 1.0);
   local_nh.param("tf_timeout", tf_timeout_, 1.0);
-
+  
   std::string interaction_mode;
   local_nh.param("interaction_mode", interaction_mode,
                  std::string("rectangle"));
@@ -117,45 +120,45 @@ ImageView2::ImageView2(ros::NodeHandle& nh)
   resize_x_ = 1.0 / xx;
   resize_y_ = 1.0 / yy;
   filename_format_.parse(format_string);
-
+  
   font_ = cv::FONT_HERSHEY_DUPLEX;
   window_selection_.x = window_selection_.y = window_selection_.height =
       window_selection_.width = 0;
-
+  
   image_pub_ = it.advertise("image_marked", 1);
   local_image_pub_ = local_it.advertise("marked", 1);
-
+  
   image_sub_ = it.subscribe(camera, 1, &ImageView2::imageCb, this, transport);
   info_sub_ = nh.subscribe(camera_info, 1, &ImageView2::infoCb, this);
   marker_sub_ = nh.subscribe(marker_topic_, 10, &ImageView2::markerCb, this);
   event_sub_ =
       local_nh.subscribe(camera + "/event", 100, &ImageView2::eventCb, this);
-
+  
   change_mode_srv_ = local_nh.advertiseService(
-      "change_mode", &ImageView2::changeModeServiceCallback, this);
+        "change_mode", &ImageView2::changeModeServiceCallback, this);
   rectangle_mode_srv_ = local_nh.advertiseService(
-      "rectangle_mode", &ImageView2::rectangleModeServiceCallback, this);
+        "rectangle_mode", &ImageView2::rectangleModeServiceCallback, this);
   grabcut_mode_srv_ = local_nh.advertiseService(
-      "grabcut_mode", &ImageView2::grabcutModeServiceCallback, this);
+        "grabcut_mode", &ImageView2::grabcutModeServiceCallback, this);
   grabcut_rect_mode_srv_ = local_nh.advertiseService(
-      "grabcut_rect_mode", &ImageView2::grabcutRectModeServiceCallback, this);
+        "grabcut_rect_mode", &ImageView2::grabcutRectModeServiceCallback, this);
   line_mode_srv_ = local_nh.advertiseService(
-      "line_mode", &ImageView2::lineModeServiceCallback, this);
+        "line_mode", &ImageView2::lineModeServiceCallback, this);
   poly_mode_srv_ = local_nh.advertiseService(
-      "poly_mode", &ImageView2::polyModeServiceCallback, this);
+        "poly_mode", &ImageView2::polyModeServiceCallback, this);
   none_mode_srv_ = local_nh.advertiseService(
-      "none_mode", &ImageView2::noneModeServiceCallback, this);
-
+        "none_mode", &ImageView2::noneModeServiceCallback, this);
+  
   srv_ = boost::make_shared< dynamic_reconfigure::Server< Config > >(local_nh);
   dynamic_reconfigure::Server< Config >::CallbackType f =
       boost::bind(&ImageView2::config_callback, this, _1, _2);
   srv_->setCallback(f);
-
-  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
-  mpClosingFilter =
-      cv::cuda::createMorphologyFilter(cv::MORPH_CLOSE, CV_32F, kernel);
-  mpOpeningFilter =
-      cv::cuda::createMorphologyFilter(cv::MORPH_OPEN, CV_32F, kernel);
+  
+  //  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
+  //  mpClosingFilter =
+  //      cv::cuda::createMorphologyFilter(cv::MORPH_CLOSE, CV_32F, kernel);
+  //  mpOpeningFilter =
+  //      cv::cuda::createMorphologyFilter(cv::MORPH_OPEN, CV_32F, kernel);
 }
 
 ImageView2::~ImageView2() {
@@ -169,7 +172,7 @@ void ImageView2::config_callback(Config& config, uint32_t level) {
   fisheye_mode_ = config.fisheye_mode;
   div_u_ = config.div_u;
   div_v_ = config.div_v;
-
+  
   grid_red_ = config.grid_red;
   grid_blue_ = config.grid_blue;
   grid_green_ = config.grid_green;
@@ -239,10 +242,10 @@ void ImageView2::drawCircle(const image_view2::ImageMarker2::ConstPtr& marker) {
                (marker->width == 0 ? DEFAULT_LINE_WIDTH : marker->width));
     if (marker->filled) {
       cv::circle(
-          draw_, uv,
-          (marker->scale == 0 ? DEFAULT_CIRCLE_SCALE : marker->scale) -
-              (marker->width == 0 ? DEFAULT_LINE_WIDTH : marker->width) / 2.0,
-          MsgToRGB(marker->fill_color), -1);
+            draw_, uv,
+            (marker->scale == 0 ? DEFAULT_CIRCLE_SCALE : marker->scale) -
+            (marker->width == 0 ? DEFAULT_LINE_WIDTH : marker->width) / 2.0,
+            MsgToRGB(marker->fill_color), -1);
     }
   }
 }
@@ -364,7 +367,7 @@ void ImageView2::drawPolygon(const image_view2::ImageMarker2::ConstPtr& marker,
     std::vector< geometry_msgs::Point >::const_iterator end =
         marker->points.end();
     std::vector< cv::Point > points;
-
+    
     if (marker->filled) {
       points.push_back(cv::Point(it->x, it->y));
     }
@@ -427,14 +430,14 @@ void ImageView2::drawFrames(const image_view2::ImageMarker2::ConstPtr& marker,
     cv::Point3d pt_cv(pt.x(), pt.y(), pt.z());
     cv::Point2d uv;
     uv = cam_model_.project3dToPixel(pt_cv);
-
+    
     static const int RADIUS = 3;
     cv::circle(draw_, uv, RADIUS, DEFAULT_COLOR, -1);
-
+    
     // x, y, z
     cv::Point2d uv0, uv1, uv2;
     tf::Stamped< tf::Point > pin, pout;
-
+    
     // x
     pin = tf::Stamped< tf::Point >(tf::Point(0.05, 0, 0), acquisition_time,
                                    frame_id);
@@ -447,14 +450,14 @@ void ImageView2::drawFrames(const image_view2::ImageMarker2::ConstPtr& marker,
     tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
     uv1 =
         cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
-
+    
     // z
     pin = tf::Stamped< tf::Point >(tf::Point(0, 0, 0.05), acquisition_time,
                                    frame_id);
     tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
     uv2 =
         cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
-
+    
     // draw
     if (blurry_mode_) {
       int s0 = 2;
@@ -475,7 +478,7 @@ void ImageView2::drawFrames(const image_view2::ImageMarker2::ConstPtr& marker,
       cv::line(draw_, uv, uv1, CV_RGB(0, 255, 0), 2);
       cv::line(draw_, uv, uv2, CV_RGB(0, 0, 255), 2);
     }
-
+    
     // index
     cv::Size text_size;
     int baseline;
@@ -512,7 +515,7 @@ void ImageView2::drawText(const image_view2::ImageMarker2::ConstPtr& marker,
     scale = desired_size / height_size;
     ROS_DEBUG("text scale: %f", scale);
   }
-
+  
   cv::Point origin;
   if (marker->left_up_origin) {
     if (marker->ratio_scale) {
@@ -529,11 +532,11 @@ void ImageView2::drawText(const image_view2::ImageMarker2::ConstPtr& marker,
                          marker->position.y + baseline + 3);
     }
   }
-
+  
   if (marker->filled) {
     cv::putText(draw_, marker->text.c_str(), origin, font_, scale,
                 DEFAULT_COLOR, marker->filled);
-
+    
   } else {
     cv::putText(draw_, marker->text.c_str(), origin, font_, scale,
                 DEFAULT_COLOR);
@@ -581,12 +584,12 @@ void ImageView2::drawLineStrip3D(
     pt_cam.point.y = pt.y();
     pt_cam.point.z = pt.z();
     tf_listener_.transformPoint(frame_id, pt_cam, pt_);
-
+    
     cv::Point2d uv;
     tf::Stamped< tf::Point > pin, pout;
     pin = tf::Stamped< tf::Point >(
-        tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
-        acquisition_time, frame_id);
+          tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
+          acquisition_time, frame_id);
     tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
     uv = cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
     geometry_msgs::Point point2D;
@@ -629,12 +632,12 @@ void ImageView2::drawLineList3D(
     pt_cam.point.y = pt.y();
     pt_cam.point.z = pt.z();
     tf_listener_.transformPoint(frame_id, pt_cam, pt_);
-
+    
     cv::Point2d uv;
     tf::Stamped< tf::Point > pin, pout;
     pin = tf::Stamped< tf::Point >(
-        tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
-        acquisition_time, frame_id);
+          tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
+          acquisition_time, frame_id);
     tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
     uv = cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
     geometry_msgs::Point point2D;
@@ -677,12 +680,12 @@ void ImageView2::drawPolygon3D(
     pt_cam.point.y = pt.y();
     pt_cam.point.z = pt.z();
     tf_listener_.transformPoint(frame_id, pt_cam, pt_);
-
+    
     cv::Point2d uv;
     tf::Stamped< tf::Point > pin, pout;
     pin = tf::Stamped< tf::Point >(
-        tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
-        acquisition_time, frame_id);
+          tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
+          acquisition_time, frame_id);
     tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
     uv = cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
     geometry_msgs::Point point2D;
@@ -694,7 +697,7 @@ void ImageView2::drawPolygon3D(
   std::vector< geometry_msgs::Point >::const_iterator it = points2D.begin();
   std::vector< geometry_msgs::Point >::const_iterator end = points2D.end();
   std::vector< cv::Point > points;
-
+  
   if (marker->filled) {
     points.push_back(cv::Point(it->x, it->y));
   }
@@ -739,12 +742,12 @@ void ImageView2::drawPoints3D(const image_view2::ImageMarker2::ConstPtr& marker,
     pt_cam.point.y = pt.y();
     pt_cam.point.z = pt.z();
     tf_listener_.transformPoint(frame_id, pt_cam, pt_);
-
+    
     cv::Point2d uv;
     tf::Stamped< tf::Point > pin, pout;
     pin = tf::Stamped< tf::Point >(
-        tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
-        acquisition_time, frame_id);
+          tf::Point(pt_.point.x + p.x, pt_.point.y + p.y, pt_.point.z + p.z),
+          acquisition_time, frame_id);
     tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
     uv = cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
     cv::circle(draw_, uv, (marker->scale == 0 ? 3 : marker->scale), *col_it,
@@ -770,14 +773,14 @@ void ImageView2::drawText3D(const image_view2::ImageMarker2::ConstPtr& marker,
   pt_cam.point.y = pt.y();
   pt_cam.point.z = pt.z();
   tf_listener_.transformPoint(frame_id, pt_cam, pt_);
-
+  
   cv::Point2d uv;
   tf::Stamped< tf::Point > pin, pout;
   pin = tf::Stamped< tf::Point >(
-      tf::Point(pt_.point.x + marker->position3D.point.x,
-                pt_.point.y + marker->position3D.point.y,
-                pt_.point.z + marker->position3D.point.z),
-      acquisition_time, frame_id);
+        tf::Point(pt_.point.x + marker->position3D.point.x,
+                  pt_.point.y + marker->position3D.point.y,
+                  pt_.point.z + marker->position3D.point.z),
+        acquisition_time, frame_id);
   tf_listener_.transformPoint(cam_model_.tfFrame(), pin, pout);
   uv = cam_model_.project3dToPixel(cv::Point3d(pout.x(), pout.y(), pout.z()));
   cv::Size text_size;
@@ -816,7 +819,7 @@ void ImageView2::drawCircle3D(const image_view2::ImageMarker2::ConstPtr& marker,
     }
     return;
   }
-
+  
   tf::Quaternion q;
   tf::quaternionMsgToTF(pose.pose.orientation, q);
   tf::Matrix3x3 rot = tf::Matrix3x3(q);
@@ -825,25 +828,25 @@ void ImageView2::drawCircle3D(const image_view2::ImageMarker2::ConstPtr& marker,
   int N = 100;
   std::vector< std::vector< cv::Point2i > > ptss;
   std::vector< cv::Point2i > pts;
-
+  
   for (int i = 0; i < N; ++i) {
     double th = angle * i / N * TFSIMD_RADS_PER_DEG;
     tf::Vector3 v = rot * tf::Vector3(scale * tfCos(th), scale * tfSin(th), 0);
     cv::Point2d pt = cam_model_.project3dToPixel(cv::Point3d(
-        pose.pose.position.x + v.getX(), pose.pose.position.y + v.getY(),
-        pose.pose.position.z + v.getZ()));
+                                                   pose.pose.position.x + v.getX(), pose.pose.position.y + v.getY(),
+                                                   pose.pose.position.z + v.getZ()));
     pts.push_back(cv::Point2i((int)pt.x, (int)pt.y));
   }
   ptss.push_back(pts);
-
+  
   cv::polylines(draw_, ptss, (marker->arc == 0 ? true : false),
                 MsgToRGB(marker->outline_color),
                 (marker->width == 0 ? DEFAULT_LINE_WIDTH : marker->width));
-
+  
   if (marker->filled) {
     if (marker->arc != 0) {
       cv::Point2d pt = cam_model_.project3dToPixel(cv::Point3d(
-          pose.pose.position.x, pose.pose.position.y, pose.pose.position.z));
+                                                     pose.pose.position.x, pose.pose.position.y, pose.pose.position.z));
       pts.push_back(cv::Point2i((int)pt.x, (int)pt.y));
       ptss.clear();
       ptss.push_back(pts);
@@ -855,7 +858,7 @@ void ImageView2::drawCircle3D(const image_view2::ImageMarker2::ConstPtr& marker,
 void ImageView2::resolveLocalMarkerQueue() {
   {
     boost::mutex::scoped_lock lock(queue_mutex_);
-
+    
     while (!marker_queue_.empty()) {
       // remove marker by namespace and id
       V_ImageMarkerMessage::iterator new_msg = marker_queue_.begin();
@@ -874,7 +877,7 @@ void ImageView2::resolveLocalMarkerQueue() {
       }
     }
   }
-
+  
   // check lifetime and remove REMOVE-type marker msg
   for (V_ImageMarkerMessage::iterator it = local_queue_.begin();
        it < local_queue_.end(); it++) {
@@ -895,10 +898,10 @@ void ImageView2::drawMarkers() {
     // processMessage;
     for (; message_it != message_end; ++message_it) {
       image_view2::ImageMarker2::ConstPtr& marker = *message_it;
-
+      
       ROS_DEBUG_STREAM("message type = " << marker->type << ", id "
-                                         << marker->id);
-
+                       << marker->id);
+      
       // outline colors
       std::vector< CvScalar > colors;
       BOOST_FOREACH (std_msgs::ColorRGBA color, marker->outline_colors) {
@@ -906,7 +909,7 @@ void ImageView2::drawMarkers() {
       }
       if (colors.size() == 0) colors.push_back(DEFAULT_COLOR);
       std::vector< CvScalar >::iterator col_it = colors.begin();
-
+      
       // check camera_info
       if (marker->type == image_view2::ImageMarker2::FRAMES ||
           marker->type == image_view2::ImageMarker2::LINE_STRIP3D ||
@@ -926,62 +929,62 @@ void ImageView2::drawMarkers() {
       }
       // CIRCLE, LINE_STRIP, LINE_LIST, POLYGON, POINTS
       switch (marker->type) {
-        case image_view2::ImageMarker2::CIRCLE: {
-          drawCircle(marker);
-          break;
-        }
-        case image_view2::ImageMarker2::LINE_STRIP: {
-          drawLineStrip(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::LINE_LIST: {
-          drawLineList(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::POLYGON: {
-          drawPolygon(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::POINTS: {
-          drawPoints(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::FRAMES: {
-          drawFrames(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::TEXT: {
-          drawText(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::LINE_STRIP3D: {
-          drawLineStrip3D(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::LINE_LIST3D: {
-          drawLineList3D(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::POLYGON3D: {
-          drawPolygon3D(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::POINTS3D: {
-          drawPoints3D(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::TEXT3D: {
-          drawText3D(marker, colors, col_it);
-          break;
-        }
-        case image_view2::ImageMarker2::CIRCLE3D: {
-          drawCircle3D(marker, colors, col_it);
-          break;
-        }
-        default: {
-          ROS_WARN("Undefined Marker type(%d)", marker->type);
-          break;
-        }
+      case image_view2::ImageMarker2::CIRCLE: {
+        drawCircle(marker);
+        break;
+      }
+      case image_view2::ImageMarker2::LINE_STRIP: {
+        drawLineStrip(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::LINE_LIST: {
+        drawLineList(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::POLYGON: {
+        drawPolygon(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::POINTS: {
+        drawPoints(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::FRAMES: {
+        drawFrames(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::TEXT: {
+        drawText(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::LINE_STRIP3D: {
+        drawLineStrip3D(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::LINE_LIST3D: {
+        drawLineList3D(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::POLYGON3D: {
+        drawPolygon3D(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::POINTS3D: {
+        drawPoints3D(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::TEXT3D: {
+        drawText3D(marker, colors, col_it);
+        break;
+      }
+      case image_view2::ImageMarker2::CIRCLE3D: {
+        drawCircle3D(marker, colors, col_it);
+        break;
+      }
+      default: {
+        ROS_WARN("Undefined Marker type(%d)", marker->type);
+        break;
+      }
       }
     }
   }
@@ -1027,15 +1030,15 @@ void ImageView2::drawInteraction() {
     boost::mutex::scoped_lock lock(point_array_mutex_);
     if (rect_fg_.width != 0 && rect_fg_.height != 0) {
       cv::rectangle(
-          draw_, cv::Point(rect_fg_.x, rect_fg_.y),
-          cv::Point(rect_fg_.x + rect_fg_.width, rect_fg_.y + rect_fg_.height),
-          CV_RGB(255, 0, 0), 4);
+            draw_, cv::Point(rect_fg_.x, rect_fg_.y),
+            cv::Point(rect_fg_.x + rect_fg_.width, rect_fg_.y + rect_fg_.height),
+            CV_RGB(255, 0, 0), 4);
     }
     if (rect_bg_.width != 0 && rect_bg_.height != 0) {
       cv::rectangle(
-          draw_, cv::Point(rect_bg_.x, rect_bg_.y),
-          cv::Point(rect_bg_.x + rect_bg_.width, rect_bg_.y + rect_bg_.height),
-          CV_RGB(0, 255, 0), 4);
+            draw_, cv::Point(rect_bg_.x, rect_bg_.y),
+            cv::Point(rect_bg_.x + rect_bg_.width, rect_bg_.y + rect_bg_.height),
+            CV_RGB(0, 255, 0), 4);
     }
   } else if (mode_ == MODE_LINE) {
     boost::mutex::scoped_lock lock(line_point_mutex_);
@@ -1049,15 +1052,15 @@ void ImageView2::drawInteraction() {
       // draw selected points
       for (size_t i = 0; i < poly_points_.size() - 1; i++) {
         cv::line(draw_, poly_points_[i], poly_points_[i + 1], CV_RGB(255, 0, 0),
-                 8, 8, 0);
+            8, 8, 0);
       }
       // draw selecting points
       if (poly_selecting_done_) {
         cv::line(draw_, poly_points_[poly_points_.size() - 1], poly_points_[0],
-                 CV_RGB(255, 0, 0), 8, 8, 0);
+            CV_RGB(255, 0, 0), 8, 8, 0);
       } else {
         cv::line(draw_, poly_points_[poly_points_.size() - 1],
-                 poly_selecting_point_, CV_RGB(0, 255, 0), 8, 8, 0);
+            poly_selecting_point_, CV_RGB(0, 255, 0), 8, 8, 0);
       }
     }
   }
@@ -1071,18 +1074,18 @@ void ImageView2::drawInfo(ros::Time& before_rendering) {
       (before_rendering.toSec() - last_time.toSec() > 2)) {
     int n = times_.size();
     double mean = 0, rate = 1.0, std_dev = 0.0, max_delta, min_delta;
-
+    
     std::for_each(times_.begin(), times_.end(), (mean += boost::lambda::_1));
     mean /= n;
     rate /= mean;
-
+    
     std::for_each(
-        times_.begin(), times_.end(),
-        (std_dev += (boost::lambda::_1 - mean) * (boost::lambda::_1 - mean)));
+          times_.begin(), times_.end(),
+          (std_dev += (boost::lambda::_1 - mean) * (boost::lambda::_1 - mean)));
     std_dev = sqrt(std_dev / n);
     min_delta = *std::min_element(times_.begin(), times_.end());
     max_delta = *std::max_element(times_.begin(), times_.end());
-
+    
     std::stringstream f1, f2;
     f1.precision(3);
     f1 << std::fixed;
@@ -1109,13 +1112,13 @@ void ImageView2::cropROI() {
   if (mode_ == MODE_RECTANGLE) {
     // publish rectangle cropped image
     cv::Rect screen_rect(
-        cv::Point(window_selection_.x, window_selection_.y),
-        cv::Point(window_selection_.x + window_selection_.width,
-                  window_selection_.y + window_selection_.height));
+          cv::Point(window_selection_.x, window_selection_.y),
+          cv::Point(window_selection_.x + window_selection_.width,
+                    window_selection_.y + window_selection_.height));
     cv::Mat cropped_img = original_image_(screen_rect);
     rectangle_img_pub_.publish(
-        cv_bridge::CvImage(last_msg_->header, last_msg_->encoding, cropped_img)
-            .toImageMsg());
+          cv_bridge::CvImage(last_msg_->header, last_msg_->encoding, cropped_img)
+          .toImageMsg());
   }
 }
 
@@ -1135,7 +1138,7 @@ void ImageView2::redraw() {
   drawMarkers();
   drawInteraction();
   cropROI();
-
+  
   if (draw_grid_) drawGrid();
   if (blurry_mode_) cv::addWeighted(image_, 0.9, draw_, 1.0, 0.0, image_);
   if (use_window) {
@@ -1157,8 +1160,8 @@ void ImageView2::createDistortGridImage() {
   distort_grid_mask.setTo(cv::Scalar(0));
   const float K = 341.0;
   float R_divier = (1.0 / (draw_.cols / 2)),
-        center_x = distort_grid_mask.rows / 2,
-        center_y = distort_grid_mask.cols / 2;
+      center_x = distort_grid_mask.rows / 2,
+      center_y = distort_grid_mask.cols / 2;
   for (int degree = -80; degree <= 80; degree += space_) {
     double C = draw_.cols / 2.0 * tan(degree * 3.14159265 / 180);
     for (float theta = -1.57; theta <= 1.57; theta += 0.001) {
@@ -1195,18 +1198,18 @@ void ImageView2::drawGrid() {
     cv::Point2d p0 = cv::Point2d(0, last_msg_->height / 2.0);
     cv::Point2d p1 = cv::Point2d(last_msg_->width, last_msg_->height / 2.0);
     cv::line(draw_, p0, p1, CV_RGB(255, 0, 0), DEFAULT_LINE_WIDTH);
-
+    
     cv::Point2d p2 = cv::Point2d(last_msg_->width / 2.0, 0);
     cv::Point2d p3 = cv::Point2d(last_msg_->width / 2.0, last_msg_->height);
     cv::line(draw_, p2, p3, CV_RGB(255, 0, 0), DEFAULT_LINE_WIDTH);
-
+    
     for (int i = 1; i < div_u_; i++) {
       cv::Point2d u0 = cv::Point2d(0, last_msg_->height * i * 1.0 / div_u_);
       cv::Point2d u1 =
           cv::Point2d(last_msg_->width, last_msg_->height * i * 1.0 / div_u_);
       cv::line(draw_, u0, u1, CV_RGB(255, 0, 0), 1);
     }
-
+    
     for (int i = 1; i < div_v_; i++) {
       cv::Point2d v0 = cv::Point2d(last_msg_->width * i * 1.0 / div_v_, 0);
       cv::Point2d v1 =
@@ -1231,7 +1234,7 @@ void ImageView2::imageCb(const sensor_msgs::ImageConstPtr& msg) {
   static ros::Time old_time;
   times_.push_front(ros::Time::now().toSec() - old_time.toSec());
   old_time = ros::Time::now();
-
+  
   if (old_time.toSec() - ros::Time::now().toSec() > 0) {
     ROS_WARN("TF Cleared for old time");
   }
@@ -1243,21 +1246,21 @@ void ImageView2::imageCb(const sensor_msgs::ImageConstPtr& msg) {
                   const_cast< uint8_t* >(&msg->data[0]), msg->step);
     } else if (msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1) {
       cv::Mat input_image = cv_bridge::toCvCopy(msg)->image;
-
+      
       if (flip_) cv::flip(input_image, input_image, -1);
-
+      
       if (depth_filter_) {
         input_image.convertTo(input_image, CV_32F, 1.0f / 5000.0f);
-        cv::cuda::GpuMat gpuInput_gray(input_image);
-        cv::cuda::GpuMat gpuOpen;
-        cv::cuda::threshold(gpuInput_gray, gpuInput_gray, 10.0, 255.0,
-                            CV_THRESH_TOZERO_INV);
-        mpOpeningFilter->apply(gpuInput_gray, gpuOpen);
-        mpClosingFilter->apply(gpuOpen, gpuOpen);
-        gpuOpen.download(input_image);
+        //        cv::cuda::GpuMat gpuInput_gray(input_image);
+        //        cv::cuda::GpuMat gpuOpen;
+        //        cv::cuda::threshold(gpuInput_gray, gpuInput_gray, 10.0, 255.0,
+        //                            CV_THRESH_TOZERO_INV);
+        //        mpOpeningFilter->apply(gpuInput_gray, gpuOpen);
+        //        mpClosingFilter->apply(gpuOpen, gpuOpen);
+        //        gpuOpen.download(input_image);
         threshold(input_image, input_image, 10.0, 0.0, CV_THRESH_TOZERO_INV);
       }
-
+      
       // standardize pixel values to 0-255 to visualize depth image
       double min, max;
       cv::minMaxIdx(input_image, &min, &max);
@@ -1266,7 +1269,7 @@ void ImageView2::imageCb(const sensor_msgs::ImageConstPtr& msg) {
       try {
         original_image_ =
             cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8)->image;
-
+        
         if (flip_) cv::flip(original_image_, original_image_, -1);
       } catch (cv_bridge::Exception& e) {
         ROS_ERROR("Unable to convert %s image to bgr8", msg->encoding.c_str());
@@ -1358,7 +1361,7 @@ void ImageView2::publishPointArray() {
   sensor_msgs::PointCloud2::Ptr ros_cloud(new sensor_msgs::PointCloud2);
   pcl::toROSMsg(pcl_cloud, *ros_cloud);
   ros_cloud->header.stamp = ros::Time::now();
-
+  
   point_array_pub_.publish(ros_cloud);
 }
 
@@ -1491,7 +1494,7 @@ void ImageView2::publishMouseInteractionResult() {
       ROS_INFO("Publish rectangle point %s (%f %f %f %f)",
                rectangle_pub_.getTopic().c_str(),
                screen_msg.polygon.points[0].x, screen_msg.polygon.points[0].y,
-               screen_msg.polygon.points[1].x, screen_msg.polygon.points[1].y);
+          screen_msg.polygon.points[1].x, screen_msg.polygon.points[1].y);
       rectangle_pub_.publish(screen_msg);
       continuous_ready_ = true;
     }
@@ -1671,35 +1674,35 @@ void ImageView2::processMouseEvent(int event, int x, int y, int flags,
                                    void* param) {
   checkMousePos(x, y);
   switch (event) {
-    case CV_EVENT_MOUSEMOVE: {
-      processMove(x, y);
-      break;
-    }
-    case CV_EVENT_LBUTTONDOWN:  // click
-      processLeftButtonDown(x, y);
-      break;
-    case CV_EVENT_LBUTTONUP:
-      processLeftButtonUp(x, y);
-      break;
-    case CV_EVENT_RBUTTONDOWN: {
-      if (getMode() == MODE_POLY) {
-        // close the polygon
-        finishSelectingPoly();
-        publishPolyPoints();
-        continuous_ready_ = true;
+  case CV_EVENT_MOUSEMOVE: {
+    processMove(x, y);
+    break;
+  }
+  case CV_EVENT_LBUTTONDOWN:  // click
+    processLeftButtonDown(x, y);
+    break;
+  case CV_EVENT_LBUTTONUP:
+    processLeftButtonUp(x, y);
+    break;
+  case CV_EVENT_RBUTTONDOWN: {
+    if (getMode() == MODE_POLY) {
+      // close the polygon
+      finishSelectingPoly();
+      publishPolyPoints();
+      continuous_ready_ = true;
+    } else {
+      boost::mutex::scoped_lock lock(image_mutex_);
+      if (!image_.empty()) {
+        std::string filename = (filename_format_ % count_).str();
+        cv::imwrite(filename.c_str(), image_);
+        ROS_INFO("Saved image %s", filename.c_str());
+        count_++;
       } else {
-        boost::mutex::scoped_lock lock(image_mutex_);
-        if (!image_.empty()) {
-          std::string filename = (filename_format_ % count_).str();
-          cv::imwrite(filename.c_str(), image_);
-          ROS_INFO("Saved image %s", filename.c_str());
-          count_++;
-        } else {
-          ROS_WARN("Couldn't save image, no data!");
-        }
+        ROS_WARN("Couldn't save image, no data!");
       }
-      break;
     }
+    break;
+  }
   }
   {
     boost::mutex::scoped_lock lock2(image_mutex_);
@@ -1718,10 +1721,10 @@ void ImageView2::mouseCb(int event, int x, int y, int flags, void* param) {
 void ImageView2::pressKey(int key) {
   if (key != -1) {
     switch (key) {
-      case 27: {
-        resetInteraction();
-        break;
-      }
+    case 27: {
+      resetInteraction();
+      break;
+    }
     }
   }
 }
